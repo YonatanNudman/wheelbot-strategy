@@ -1,0 +1,16 @@
+.env
+*.db
+*.db-journal
+backups/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+logs/
+.claude/
+.git/
+.gitignore
+*.log
+.DS_Store
