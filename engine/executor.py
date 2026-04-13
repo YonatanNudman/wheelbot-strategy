@@ -99,8 +99,9 @@ class OrderExecutor:
                 error_message=bp_msg,
             )
 
-        if self.paper_trade:
-            return self._execute_paper(signal)
+        # Paper trading goes through Alpaca's paper API (real simulator, real fills)
+        # NOT through _execute_paper() which only creates local DB records.
+        # The AlpacaBroker is already initialized with paper=True keys.
 
         # ── P0-5: Use market orders for urgent (stop-loss) signals ────────
         if signal.urgency == Urgency.URGENT.value and hasattr(self.broker, "market_close_option"):
@@ -124,9 +125,34 @@ class OrderExecutor:
             log.error("Order failed for signal #%s", signal.id)
         else:
             log.info(
-                "Order placed: rh_id=%s status=%s for signal #%s",
+                "Order placed: order_id=%s status=%s for signal #%s",
                 order.order_id, order.status, signal.id,
             )
+            # Create a provisional position record so the dashboard shows it immediately.
+            # The order tracker will update it with fill details when the order fills.
+            if signal.action in (SignalAction.SELL_CSP.value, SignalAction.SELL_CC.value):
+                import uuid
+                today = now_et().strftime("%Y-%m-%d")
+                prov_pos = Position(
+                    symbol=signal.symbol,
+                    strategy=signal.strategy or "wheel_csp",
+                    state="open",
+                    option_type=signal.option_type,
+                    strike=signal.strike,
+                    expiration_date=signal.expiration_date,
+                    quantity=1,
+                    entry_date=today,
+                    entry_price=signal.limit_price or 0.0,
+                    entry_credit_total=(signal.limit_price or 0.0) * 100,
+                    target_close_price=(signal.limit_price or 0.0) * get("wheel.profit_target_pct", 0.5),
+                    stop_loss_price=(signal.limit_price or 0.0) * get("wheel.stop_loss_multiplier", 2.0),
+                    ai_reasoning=signal.reason,
+                    notes=f"Order pending: {order.order_id}",
+                )
+                prov_pos.id = db.create_position(prov_pos)
+                execution.position_id = prov_pos.id
+                db.update_execution(execution.id, position_id=prov_pos.id)
+                log.info("Provisional position #%d created for %s", prov_pos.id, signal.symbol)
 
         return execution
 
