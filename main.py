@@ -55,7 +55,26 @@ def main():
     else:
         log.info("*** LIVE TRADING MODE ***")
 
-    # Initialize database
+    # Initialize database — clean slate on fresh deploy (Railway containers are ephemeral)
+    import pathlib
+    db_path = pathlib.Path(__file__).parent / "wheelbot.db"
+    if db_path.exists():
+        # Check if DB has ghost positions from old fake paper mode
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM positions WHERE notes LIKE '%Order pending%' OR notes IS NULL").fetchone()[0]
+            if count > 0:
+                log.warning("Clearing %d ghost positions from old paper mode", count)
+                conn.execute("DELETE FROM positions")
+                conn.execute("DELETE FROM signals")
+                conn.execute("DELETE FROM executions")
+                conn.commit()
+        except Exception:
+            pass  # Table might not exist yet
+        finally:
+            conn.close()
+
     db.init_db()
     log.info("Database initialized")
 
