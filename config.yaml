@@ -7,13 +7,13 @@ risk:
   max_daily_loss_pct: 0.05    # 5% of portfolio — circuit breaker halts all trading for the day
 
 capital:
-  total: 5000
-  max_per_position_pct: 0.50  # Max 50% of capital in one position
+  total: 100000          # Paper trading account size
+  max_per_position_pct: 0.20  # Max 20% of capital per position
   reserve_pct: 0.10           # Always keep 10% cash
   margin_enabled: true
 
 positions:
-  max_open_total: 3     # Global position cap
+  max_open_total: 8     # Run 5-8 positions for proper testing
   max_pmcc: 2           # Max PMCC pairs
   max_wheel: 2          # Max wheel positions
 
