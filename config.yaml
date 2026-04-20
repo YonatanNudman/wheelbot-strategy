@@ -36,19 +36,14 @@ pmcc:
 wheel:
   enabled: true
   wishlist:
-    # Tier 1 — High conviction (start here)
-    - SOFI    # $16 | Fintech bank | IV 35-65% | Excellent liquidity | $800/CSP with margin
-    - F       # $12 | Auto | IV 30-50% | Best liquidity under $15 | $600/CSP
-    - PINS    # $18 | Social/ads | IV 40-60% | Profitable, growing | $880/CSP
-    # Tier 2 — Strong candidates
-    - DKNG    # $22 | Sports betting | IV 45-70% | Rich premiums | $1,115/CSP
-    - CCL     # $28 | Cruise/travel | IV 35-55% | Post-pandemic recovery | $1,400/CSP
-    - CLF     # $9  | Steel | IV 45-70% | Ultra-cheap, tariff beneficiary | $465/CSP
-    - T       # $26 | Telecom | IV 25-40% | Defensive, 6% dividend | $1,325/CSP
-    - VALE    # $15 | Mining | IV 35-55% | Commodity exposure, dividend | $750/CSP
-    # Tier 3 — Aggressive (higher risk, higher premiums)
-    - RIVN    # $15 | EV | IV 55-80% | Richest premiums | $770/CSP
-    - NIO     # $6  | Chinese EV | IV 50-75% | Ultra-cheap, max diversification | $305/CSP
+    # LIVE-READY — trimmed from 10 to 6. Dropped: CLF, RIVN, NIO, DKNG
+    # (top 4 by 35d drawdown probability ≥44%, ann.vol ≥48%).
+    - SOFI    # $16 | Fintech | IV 35-65%, ann.vol 60% | liquid
+    - F       # $12 | Auto   | IV 30-50%, ann.vol 33% | defensive
+    - PINS    # $18 | Social | IV 40-60%, ann.vol 54%
+    - CCL     # $28 | Cruise | IV 35-55%, ann.vol 51%
+    - T       # $26 | Telecom| IV 25-40%, ann.vol 23% | lowest-vol, dividend
+    - VALE    # $15 | Mining | IV 35-55%, ann.vol 32% | dividend
   target_delta: 0.20          # CSP sell delta
   cc_delta: 0.30              # Covered call delta
   min_ivr: 30                 # Minimum IV Rank
