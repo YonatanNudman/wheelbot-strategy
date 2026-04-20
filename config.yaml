@@ -7,15 +7,20 @@ risk:
   max_daily_loss_pct: 0.05    # 5% of portfolio — circuit breaker halts all trading for the day
 
 capital:
-  total: 100000          # Paper trading account size
-  max_per_position_pct: 0.20  # Max 20% of capital per position
+  # NOTE: live account has $2,758 buying power but ~$2,900 equity is tied up in
+  # existing ETFs (SGOV, SUB, IVV, KWEB, FEZ, EUAD). Wheel uses shared buying power.
+  # Sizing bumped from 10%/20% → 25% so positions can actually fit on a small account
+  # with margin. At $2,800 × 0.25 = $700 budget per position, enough for any wishlist
+  # stock on Reg-T margin (which is ~20% of underlying for short puts).
+  total: 2800            # Live account equity (update if you deposit more)
+  max_per_position_pct: 0.25  # Max 25% of capital per position (small-account concentration)
   reserve_pct: 0.10           # Always keep 10% cash
   margin_enabled: true
 
 positions:
-  max_open_total: 8     # Run 5-8 positions for proper testing
-  max_pmcc: 2           # Max PMCC pairs
-  max_wheel: 2          # Max wheel positions
+  max_open_total: 4     # Small account — 4 positions max while scaling
+  max_pmcc: 0           # Not using PMCC on small account
+  max_wheel: 4          # All 4 slots for wheel
 
 pmcc:
   enabled: false

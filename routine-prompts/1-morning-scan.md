@@ -7,13 +7,17 @@ WISHLIST: SOFI, F, PINS, CCL, T, VALE
 # and DKNG (flagged "delta too aggressive" in daily reflection). These 6 have balanced vol
 # and proved acceptable drawdown rates over the past year.
 
-SIZING RULE — PERCENTAGE BASED:
-- Check total portfolio value first
-- Each position = 10% of portfolio value (so $10K per position on a $100K account, $500 on a $5K account)
-- Calculate: position_budget = portfolio_value * 0.10
-- Only sell puts where strike * 100 <= position_budget
-- Max 8 open positions (80% deployed, 20% cash reserve)
-- If a stock's strike is too expensive for 10% of portfolio, skip it
+SIZING RULE — SMALL ACCOUNT, MARGIN-AWARE:
+- Query Alpaca /v2/account and read `buying_power` (this is the real usable amount)
+- Each position uses 25% of buying_power as budget
+- Calculate: position_budget = buying_power * 0.25
+- For CASH accounts: only sell puts where strike * 100 <= position_budget
+- For MARGIN accounts (this bot): Reg-T initial margin for a short put is approx
+    max(0.20 × underlying_price × 100,  0.10 × strike × 100)   + premium − OTM_amount
+  So if position_budget = $700, a $16 put on SOFI needs ~$360 margin → fits comfortably.
+- Max 4 open positions total (small-account concentration; expand as equity grows)
+- If the estimated margin requirement > position_budget, skip that symbol
+- Account shares buying power with any existing stock/ETF holdings — don't exceed 75% deployed
 
 ENTRY RULES:
 - Sell puts at delta ~0.20-0.30, 21-35 DTE  (accelerated — shorter window = faster decay)
