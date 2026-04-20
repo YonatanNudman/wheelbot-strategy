@@ -52,9 +52,9 @@ wheel:
   target_delta: 0.20          # CSP sell delta
   cc_delta: 0.30              # Covered call delta
   min_ivr: 30                 # Minimum IV Rank
-  target_dte_min: 30
-  target_dte_max: 45
-  profit_target_pct: 0.50     # Close at 50% of max profit
+  target_dte_min: 21          # Accelerated (was 30) — more turnover, faster sample size
+  target_dte_max: 35          # Accelerated (was 45)
+  profit_target_pct: 0.30     # Accelerated (was 0.50) — close at 30% of max profit for faster cycles
   stop_loss_multiplier: 2.0   # Alert if loss = 2x credit
   roll_dte_threshold: 7       # Roll when DTE < 7
   earnings_buffer_days: 14    # Skip stocks with earnings within 14 days
