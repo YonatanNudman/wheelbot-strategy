@@ -55,6 +55,25 @@ def main():
     else:
         log.info("*** LIVE TRADING MODE ***")
 
+    # Log resolved config values so they're verifiable from logs (no more guessing
+    # which config was deployed — was the #1 silent-failure class historically)
+    log.info(
+        "Config loaded: capital.total=$%s | max_per_position=%s%% | reserve=%s%% | "
+        "margin=%s | max_open=%s | wheel.dte=[%s,%s] | wheel.profit_target=%s%% | "
+        "wheel.target_delta=%s | auto_execute=%s | wishlist=%s",
+        get("capital.total", 0),
+        int(get("capital.max_per_position_pct", 0) * 100),
+        int(get("capital.reserve_pct", 0) * 100),
+        get("capital.margin_enabled", False),
+        get("positions.max_open_total", 0),
+        get("wheel.target_dte_min", 30),
+        get("wheel.target_dte_max", 45),
+        int(get("wheel.profit_target_pct", 0.5) * 100),
+        get("wheel.target_delta", 0.20),
+        get("broker.auto_execute", False),
+        ",".join(get("wheel.wishlist", []) or []),
+    )
+
     # Initialize database — clean slate on fresh deploy (Railway containers are ephemeral)
     import pathlib
     db_path = pathlib.Path(__file__).parent / "wheelbot.db"

@@ -74,6 +74,11 @@ class WheelBot(commands.Bot):
         self._channel_id = int(os.environ.get("DISCORD_CHANNEL_ID", "0"))
         self._channel: discord.TextChannel | None = None
 
+        # Silent-failure alarm state
+        from utils.timing import now_et as _now_et
+        self._bot_started_at = _now_et()
+        self._silent_alarm_last_fired_date = None  # type: ignore[assignment]
+
     # ── Lifecycle ─────────────────────────────────────────────────────
 
     async def setup_hook(self) -> None:
@@ -124,6 +129,18 @@ class WheelBot(commands.Bot):
             CronTrigger(hour=17, minute=0),
             id="daily_snapshot",
             name="Daily snapshot + performance",
+        )
+        self.scheduler.add_job(
+            self._job_daily_reflection,
+            CronTrigger(hour=17, minute=30, day_of_week="mon-fri"),
+            id="daily_reflection",
+            name="Daily reflection (AI)",
+        )
+        self.scheduler.add_job(
+            self._job_weekly_autopsy,
+            CronTrigger(day_of_week="sun", hour=10, minute=0),
+            id="weekly_autopsy",
+            name="Weekly autopsy (AI)",
         )
 
         self.scheduler.start()
@@ -256,7 +273,7 @@ class WheelBot(commands.Bot):
 
     @tasks.loop(minutes=10)
     async def _heartbeat_loop(self) -> None:
-        """Send heartbeat ping every 10 minutes."""
+        """Send heartbeat ping every 10 minutes + silent-failure alarm check."""
         try:
             if self.heartbeat and hasattr(self.heartbeat, "ping"):
                 await discord.utils.maybe_coroutine(self.heartbeat.ping)
@@ -265,6 +282,38 @@ class WheelBot(commands.Bot):
             log.error("Heartbeat loop error: %s", exc)
             if self.webhook_sender:
                 self.webhook_sender.send_heartbeat_alert(f"Heartbeat failed: {exc}")
+
+        # Silent-failure check: if N trading days have passed during market hours
+        # with zero fills, page the user. Dedupe: fire once per day max.
+        try:
+            from data import database as _db
+            from engine.silent_failure_alarm import should_alarm
+            from utils.timing import now_et
+
+            _now = now_et()
+            last_fill = _db.get_last_fill_date()
+            if should_alarm(
+                now=_now,
+                last_fill_at=last_fill,
+                bot_started_at=self._bot_started_at,
+                trading_days_threshold=2,
+            ):
+                today = _now.date()
+                if self._silent_alarm_last_fired_date != today:
+                    self._silent_alarm_last_fired_date = today
+                    ref = last_fill or self._bot_started_at
+                    msg = (
+                        f"🚨 SILENT-FAILURE ALARM\n"
+                        f"No fills detected in 2+ trading days.\n"
+                        f"Last fill: {ref.isoformat() if ref else 'never'}\n"
+                        f"Now: {_now.isoformat()}\n"
+                        f"Check Railway logs + Alpaca auth."
+                    )
+                    log.warning(msg)
+                    if self.webhook_sender:
+                        self.webhook_sender.send_heartbeat_alert(msg)
+        except Exception as exc:
+            log.error("Silent-failure alarm check failed: %s", exc)
 
     @_heartbeat_loop.before_loop
     async def _before_heartbeat(self) -> None:
@@ -520,6 +569,147 @@ class WheelBot(commands.Bot):
             log.info("Daily snapshot complete")
         except Exception as exc:
             log.error("Daily snapshot failed: %s", exc)
+
+    async def _job_daily_reflection(self) -> None:
+        """17:30 ET Mon-Fri — AI reflection written to reflections/YYYY-MM-DD.md."""
+        if not is_trading_day():
+            return
+        log.info("Running daily reflection")
+        try:
+            from pathlib import Path
+
+            from ai.reflections import ReflectionGenerator, build_daily_prompt, write_reflection
+            from data import database as _db
+            from utils.timing import now_et
+
+            gen = ReflectionGenerator()
+            if not gen.enabled:
+                log.warning("Reflection skipped — OpenAI key not configured")
+                return
+
+            today = now_et().date()
+            # Gather today's fills from DB
+            fills = self._collect_todays_fills(today)
+            open_positions = [
+                {"symbol": p.symbol, "strategy": p.strategy, "strike": p.strike,
+                 "expiration": p.expiration_date}
+                for p in _db.get_open_positions()
+            ]
+            account = {}
+            try:
+                acct = self.broker.get_account_info()
+                account = {"portfolio_value": acct.portfolio_value, "buying_power": acct.buying_power}
+            except Exception:
+                pass
+
+            prompt = build_daily_prompt(
+                date=today, fills=fills, open_positions=open_positions, account=account,
+            )
+            content = gen.generate_daily(prompt)
+            if not content:
+                log.warning("Daily reflection: OpenAI returned empty")
+                return
+
+            reflections_dir = Path(__file__).parent.parent / "reflections"
+            path = write_reflection(reflections_dir, today, content)
+            log.info("Daily reflection written: %s", path)
+
+            if self._channel:
+                snippet = content[:900] + ("..." if len(content) > 900 else "")
+                await self._channel.send(f"📓 **Daily reflection — {today}**\n```\n{snippet}\n```")
+        except Exception as exc:
+            log.error("Daily reflection failed: %s", exc)
+
+    async def _job_weekly_autopsy(self) -> None:
+        """Sunday 10:00 ET — Weekly autopsy written to reflections/weekly-YYYY-MM-DD.md."""
+        log.info("Running weekly autopsy")
+        try:
+            from pathlib import Path
+
+            from ai.reflections import ReflectionGenerator, build_weekly_prompt, write_reflection
+            from data import database as _db
+            from utils.timing import now_et
+
+            gen = ReflectionGenerator()
+            if not gen.enabled:
+                log.warning("Weekly autopsy skipped — OpenAI key not configured")
+                return
+
+            today = now_et().date()
+            # Previous 7 days of fills + any closed trades in that window
+            fills = self._collect_weekly_fills(today)
+            closed_trades = [
+                {"symbol": p.symbol, "strategy": p.strategy,
+                 "pnl_dollars": p.pnl_dollars or 0, "pnl_percent": p.pnl_percent or 0}
+                for p in _db.get_closed_trades()
+            ][-20:]  # last 20 is plenty
+            account = {}
+            try:
+                acct = self.broker.get_account_info()
+                account = {"portfolio_value": acct.portfolio_value, "buying_power": acct.buying_power}
+            except Exception:
+                pass
+
+            prompt = build_weekly_prompt(
+                week_ending=today, fills=fills, closed_trades=closed_trades, account=account,
+            )
+            content = gen.generate_weekly(prompt)
+            if not content:
+                log.warning("Weekly autopsy: OpenAI returned empty")
+                return
+
+            reflections_dir = Path(__file__).parent.parent / "reflections"
+            # Prefix "weekly-" so daily files and weekly files don't clash
+            # Use a custom write since the helper uses plain YYYY-MM-DD.md naming
+            reflections_dir.mkdir(parents=True, exist_ok=True)
+            path = reflections_dir / f"weekly-{today.isoformat()}.md"
+            path.write_text(content)
+            log.info("Weekly autopsy written: %s", path)
+
+            if self._channel:
+                snippet = content[:1400] + ("..." if len(content) > 1400 else "")
+                await self._channel.send(f"📊 **Weekly autopsy — week ending {today}**\n```\n{snippet}\n```")
+        except Exception as exc:
+            log.error("Weekly autopsy failed: %s", exc)
+
+    def _collect_todays_fills(self, today) -> list[dict]:
+        """Pull today's filled executions from the DB as simple dicts."""
+        from data.database import _connect
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT e.*, s.symbol, s.strategy, s.side FROM executions e "
+                "LEFT JOIN signals s ON e.signal_id = s.id "
+                "WHERE e.fill_date IS NOT NULL "
+                "AND DATE(e.fill_date) = DATE(?)",
+                (today.isoformat(),),
+            ).fetchall()
+        return [
+            {"symbol": r["symbol"] or "?", "strategy": r["strategy"] or "?",
+             "side": r["side"] or "sell", "price": r["fill_price"] or 0,
+             "contracts": 1, "fill_date": str(r["fill_date"])}
+            for r in rows
+        ]
+
+    def _collect_weekly_fills(self, today) -> list[dict]:
+        """Pull last 7 days of fills from the DB."""
+        from datetime import timedelta
+
+        from data.database import _connect
+        start = (today - timedelta(days=7)).isoformat()
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT e.*, s.symbol, s.strategy, s.side FROM executions e "
+                "LEFT JOIN signals s ON e.signal_id = s.id "
+                "WHERE e.fill_date IS NOT NULL AND DATE(e.fill_date) >= DATE(?) "
+                "ORDER BY e.fill_date",
+                (start,),
+            ).fetchall()
+        return [
+            {"symbol": r["symbol"] or "?", "strategy": r["strategy"] or "?",
+             "side": r["side"] or "sell", "price": r["fill_price"] or 0,
+             "contracts": 1, "fill_date": str(r["fill_date"])}
+            for r in rows
+        ]
 
 
 # ── Slash commands (module-level, added in setup_hook) ────────────────────

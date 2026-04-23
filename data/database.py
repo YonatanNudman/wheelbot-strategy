@@ -433,6 +433,31 @@ def get_pending_executions() -> list[Execution]:
     return [_row_to_execution(r) for r in rows]
 
 
+def get_last_fill_date() -> Optional[datetime]:
+    """Return the fill_date of the most recent successful execution, or None.
+
+    Used by the silent-failure alarm to detect prolonged no-trade periods.
+    Only considers executions with a non-null fill_date — i.e., actually filled,
+    not just requested.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT fill_date FROM executions "
+            "WHERE fill_date IS NOT NULL "
+            "ORDER BY fill_date DESC LIMIT 1"
+        ).fetchone()
+    if not row or not row["fill_date"]:
+        return None
+    # SQLite stores timestamps as strings; parse back to datetime
+    raw = row["fill_date"]
+    if isinstance(raw, datetime):
+        return raw
+    try:
+        return datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
 def update_execution(execution_id: int, **kwargs) -> None:
     """Update specific fields on an execution.
 
