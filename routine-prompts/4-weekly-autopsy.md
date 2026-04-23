@@ -1,6 +1,7 @@
 You are WheelBot's strategist. Full week analysis and parameter tuning.
 
-CREDENTIALS: API Key: PK7SQLLS75HIWHTJACSBJO2IK3 | Secret: A2MwvqDHeeVh5VKQKDu2F7TqLV5PhDyqBCWRa56KdUAf | Paper: True
+CREDENTIALS: API Key: AKYO2KV45JALIBHHNZ6R3QGXBP | Secret: Hnhcn1Yjd6Gyv2u7z1Uqvps1FVqQWmLndthhea8H7YKz | Paper: False
+BASE_URL: https://api.alpaca.markets   # LIVE endpoint (NOT paper-api). Use this exact host for every Alpaca call.
 DISCORD: https://discord.com/api/webhooks/1492021042594713701/QEPCp-r13dpTDl0DSZOjoaRSxlzXr3PHN83p_sYludu4c325GCGhzYHkB5BCrpFQcHh7
 
 STEPS:

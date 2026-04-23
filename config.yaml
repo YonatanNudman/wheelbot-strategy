@@ -1,18 +1,15 @@
 broker:
   name: alpaca
-  paper_trade: true   # Start with paper trading! Switch to false when ready for live.
+  paper_trade: false   # Live trading (was paper). Flip back to true only for paper tests.
   auto_execute: true  # Autonomous mode — bot trades without approval. Discord is notification-only.
 
 risk:
   max_daily_loss_pct: 0.05    # 5% of portfolio — circuit breaker halts all trading for the day
 
 capital:
-  # NOTE: live account has $2,758 buying power but ~$2,900 equity is tied up in
-  # existing ETFs (SGOV, SUB, IVV, KWEB, FEZ, EUAD). Wheel uses shared buying power.
-  # Sizing bumped from 10%/20% → 25% so positions can actually fit on a small account
-  # with margin. At $2,800 × 0.25 = $700 budget per position, enough for any wishlist
-  # stock on Reg-T margin (which is ~20% of underlying for short puts).
-  total: 2800            # Live account equity (update if you deposit more)
+  # NOTE: ETFs closed 2026-04-20; equity now ~cash level until redeployed.
+  # Sizing at 25% of capital for wishlist stocks on Reg-T margin.
+  total: 4985            # Live account equity as of 2026-04-23 (Alpaca /v2/account). Was 2834 pre-funding.
   max_per_position_pct: 0.25  # Max 25% of capital per position (small-account concentration)
   reserve_pct: 0.10           # Always keep 10% cash
   margin_enabled: true
