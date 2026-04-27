@@ -279,9 +279,10 @@ class WheelStrategy(BaseStrategy):
                 continue
 
             # Open interest filter
-            if int(contract.open_interest or 0) < self.min_open_interest:
+            open_interest = int(contract.open_interest or 0)
+            if open_interest < self.min_open_interest:
                 log.debug("CSP %s $%.2f: OI %d < min %d — skip",
-                          symbol, contract.strike, contract.open_interest,
+                          symbol, contract.strike, open_interest,
                           self.min_open_interest)
                 continue
 

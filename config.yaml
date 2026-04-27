@@ -50,13 +50,13 @@ wheel:
   cc_delta: 0.30              # Covered call delta
   min_ivr: 30                 # Minimum IV Rank
   target_dte_min: 21          # Accelerated (was 30) — more turnover, faster sample size
-  target_dte_max: 35          # Accelerated (was 45)
+  target_dte_max: 40          # Slightly wider window to increase candidate count
   profit_target_pct: 0.30     # Accelerated (was 0.50) — close at 30% of max profit for faster cycles
   stop_loss_multiplier: 2.0   # Alert if loss = 2x credit
   roll_dte_threshold: 7       # Roll when DTE < 7
   earnings_buffer_days: 14    # Skip stocks with earnings within 14 days
-  min_open_interest: 500
-  max_bid_ask_spread: 0.10
+  min_open_interest: 150      # Was 500; keep liquidity floor while allowing more contracts
+  max_bid_ask_spread: 0.20    # Was 0.10; conservative relaxation to improve fill opportunities
 
 ai:
   enabled: true
