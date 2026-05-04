@@ -465,11 +465,16 @@ class WheelBot(commands.Bot):
         if not is_trading_day():
             return
         log.info("Running morning scan")
-        all_signals = []
+        all_signals: list = []
+        wishlist: list[str] = []
+        executed: list[str] = []
+        failed: list[str] = []
+        skipped_capital: list[str] = []
+        scan_error: str | None = None
         try:
             # PRIMARY: Wheel strategy scan
             if hasattr(self, "wheel_strategy") and self.wheel_strategy:
-                wishlist = cfg_get("wheel.wishlist", [])
+                wishlist = cfg_get("wheel.wishlist", []) or []
                 wheel_signals = await discord.utils.maybe_coroutine(
                     self.wheel_strategy.scan_for_entries, wishlist,
                 )
@@ -500,6 +505,7 @@ class WheelBot(commands.Bot):
                                 sig.symbol, capital_committed, usable_capital,
                             )
                             capital_committed -= (sig.strike or 0) * 100  # Undo the add
+                            skipped_capital.append(sig.symbol)
                             continue
 
                     sig_id = self.signal_queue.create(sig)
@@ -519,9 +525,11 @@ class WheelBot(commands.Bot):
                         if self._channel:
                             await self._channel.send(embed=embed)
 
+                        executed.append(sig.symbol)
                         log.info("Auto-executed signal #%d: %s", sig_id, sig.reason[:80])
                     except Exception as exec_err:
                         log.error("Auto-execution failed for signal #%d: %s", sig_id, exec_err)
+                        failed.append(sig.symbol)
                         await self.send_alert(
                             "Execution Failed",
                             f"Signal #{sig_id} failed: {exec_err}",
@@ -532,8 +540,77 @@ class WheelBot(commands.Bot):
             else:
                 log.info("Morning scan: no signals today")
         except Exception as exc:
+            scan_error = str(exc)
             log.error("Morning scan failed: %s", exc)
             await self.send_alert("Morning Scan Error", str(exc), level="error")
+
+        # Always post a one-line scan summary so we have permanent visibility
+        # into whether the scan ran and what it produced. This is the canary
+        # for "did the bot do anything today?" — never let the morning end in
+        # silence again.
+        await self._post_scan_summary(
+            wishlist=wishlist,
+            signals=all_signals,
+            executed=executed,
+            failed=failed,
+            skipped_capital=skipped_capital,
+            error=scan_error,
+        )
+
+    async def _post_scan_summary(
+        self,
+        *,
+        wishlist: list[str],
+        signals: list,
+        executed: list[str],
+        failed: list[str],
+        skipped_capital: list[str],
+        error: str | None,
+    ) -> None:
+        """Post a short morning-scan summary to Discord (always, even on no-op)."""
+        if not self._channel:
+            return
+        try:
+            from utils.timing import now_et
+
+            stamp = now_et().strftime("%H:%M ET")
+            signal_symbols = {s.symbol for s in signals}
+            no_candidates = [sym for sym in wishlist if sym not in signal_symbols]
+
+            try:
+                bp = await discord.utils.maybe_coroutine(self.broker.get_buying_power)
+                bp_str = f"BP ${bp:,.0f}"
+            except Exception:
+                bp_str = "BP ?"
+
+            if error:
+                status = "🚨"
+                headline = f"Scan FAILED: {error[:120]}"
+            elif executed:
+                status = "✅"
+                headline = (
+                    f"{len(executed)} executed ({', '.join(executed)})"
+                    + (f" | {len(failed)} failed" if failed else "")
+                )
+            elif failed:
+                status = "🚨"
+                headline = f"All {len(failed)} signal(s) failed to execute"
+            else:
+                status = "⚠️"
+                headline = "0 signals — no candidates passed filters"
+
+            lines = [
+                f"{status} **Morning scan @ {stamp}** — {headline}",
+                f"Wishlist: {', '.join(wishlist) if wishlist else '(empty)'} | {bp_str}",
+            ]
+            if no_candidates and not error:
+                lines.append(f"No candidates: {', '.join(no_candidates)}")
+            if skipped_capital:
+                lines.append(f"Skipped (capital cap): {', '.join(skipped_capital)}")
+
+            await self._channel.send("\n".join(lines))
+        except Exception as exc:
+            log.error("Failed to post scan summary: %s", exc)
 
     async def _job_auto_cancel_unfilled(self) -> None:
         """15:50 ET — Cancel orders that haven't filled."""
