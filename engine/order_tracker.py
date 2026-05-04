@@ -135,6 +135,21 @@ class OrderTracker:
                         "Position #%d closed at $%.4f (order filled)",
                         exe.position_id, fill_price,
                     )
+                else:
+                    # Opening order (sell-to-open CSP/CC) just filled. The provisional
+                    # position was created with notes="Order pending: <id>" — replace
+                    # that with real fill details so it's no longer mistaken for a ghost.
+                    db.update_position(
+                        exe.position_id,
+                        entry_price=fill_price,
+                        entry_credit_total=fill_price * 100,
+                        entry_date=fill_date[:10] if fill_date else None,
+                        notes=f"Filled @ ${fill_price:.2f} on {fill_date[:10] if fill_date else '?'}",
+                    )
+                    log.info(
+                        "Position #%d updated with fill details ($%.4f)",
+                        exe.position_id, fill_price,
+                    )
         else:
             # No position_id — this is an opening trade fill in live mode.
             # Create Position record(s) from the fill data.

@@ -7,17 +7,21 @@ risk:
   max_daily_loss_pct: 0.05    # 5% of portfolio — circuit breaker halts all trading for the day
 
 capital:
-  # NOTE: ETFs closed 2026-04-20; equity now ~cash level until redeployed.
-  # Sizing at 25% of capital for wishlist stocks on Reg-T margin.
-  total: 4985            # Live account equity as of 2026-04-23 (Alpaca /v2/account). Was 2834 pre-funding.
-  max_per_position_pct: 0.25  # Max 25% of capital per position (small-account concentration)
+  # CSPs are cash-secured (strike*100), so per-position cap must be sized so
+  # max affordable strike actually covers the wishlist. At $4985 with
+  # reserve_pct=0.10 → usable ≈ $4486; with cap=0.50 → max strike ≈ $22.
+  # That covers SOFI/F/PINS/VALE; CCL/T are dropped from wishlist below.
+  # Previous cap=0.25 yielded max strike ~$11, which produced no candidates
+  # for any wishlist name and was the proximate cause of the no-fills outage.
+  total: 4985            # Live account equity as of 2026-04-23 (Alpaca /v2/account)
+  max_per_position_pct: 0.50  # Was 0.25 — too tight for $5K wishlist
   reserve_pct: 0.10           # Always keep 10% cash
   margin_enabled: true
 
 positions:
-  max_open_total: 4     # Small account — 4 positions max while scaling
+  max_open_total: 2     # Was 4 — math can't support 4 concurrent CSPs at $5K
   max_pmcc: 0           # Not using PMCC on small account
-  max_wheel: 4          # All 4 slots for wheel
+  max_wheel: 2          # Was 4 — see above
 
 pmcc:
   enabled: false
@@ -38,13 +42,12 @@ pmcc:
 wheel:
   enabled: true
   wishlist:
-    # LIVE-READY — trimmed from 10 to 6. Dropped: CLF, RIVN, NIO, DKNG
-    # (top 4 by 35d drawdown probability ≥44%, ann.vol ≥48%).
+    # LIVE-READY for $5K account — affordability gate is strike*100 ≤ ~$2.2K.
+    # CCL ($28) and T ($26) dropped: their viable strikes exceed the per-position
+    # cap, so they produce zero candidates. Add them back when account ≥ $12K.
     - SOFI    # $16 | Fintech | IV 35-65%, ann.vol 60% | liquid
     - F       # $12 | Auto   | IV 30-50%, ann.vol 33% | defensive
     - PINS    # $18 | Social | IV 40-60%, ann.vol 54%
-    - CCL     # $28 | Cruise | IV 35-55%, ann.vol 51%
-    - T       # $26 | Telecom| IV 25-40%, ann.vol 23% | lowest-vol, dividend
     - VALE    # $15 | Mining | IV 35-55%, ann.vol 32% | dividend
   target_delta: 0.20          # CSP sell delta
   cc_delta: 0.30              # Covered call delta

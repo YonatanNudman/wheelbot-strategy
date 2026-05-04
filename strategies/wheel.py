@@ -246,7 +246,9 @@ class WheelStrategy(BaseStrategy):
             return None
 
         # ── Step 3: Fetch put option chain ────────────────────────────────
-        puts = self._fetch_option_contracts(symbol, option_type="put")
+        puts = self._fetch_option_contracts(
+            symbol, option_type="put", stock_price=stock_price,
+        )
         if not puts:
             log.debug("CSP %s: no put contracts in DTE window", symbol)
             return None
@@ -437,7 +439,9 @@ class WheelStrategy(BaseStrategy):
         log.debug("CC %s: stock price $%.2f (cost_basis $%.2f)", symbol, stock_price, cost_basis)
 
         # ── Step 3: Fetch call option chain ───────────────────────────────
-        calls = self._fetch_option_contracts(symbol, option_type="call")
+        calls = self._fetch_option_contracts(
+            symbol, option_type="call", stock_price=stock_price,
+        )
         if not calls:
             log.debug("CC %s: no call contracts in DTE window", symbol)
             return None
@@ -906,12 +910,20 @@ class WheelStrategy(BaseStrategy):
         self,
         symbol: str,
         option_type: str = "put",
+        stock_price: float | None = None,
     ) -> list[BrokerContract]:
         """Fetch option contracts from Alpaca within the target DTE window.
 
         Uses direct Alpaca SDK calls (same pattern as vrp_spreads.py) to get
         contracts and their live quotes.  Returns broker OptionContract objects
         with bid/ask/mark/open_interest populated.
+
+        Alpaca returns contracts ordered by strike across all expirations in the
+        window, often 200+ for liquid names. The Latest-Quote endpoint caps at
+        50 symbols per batch, so we have to choose 50 — and the lowest 50
+        strikes are useless (deep OTM puts / deep ITM calls). When stock_price
+        is provided we sort by proximity to it first, so the slice captures
+        strikes near target-delta range instead of the worthless tails.
         """
         today = now_et().date()
         min_exp = (today + timedelta(days=self.target_dte_min)).isoformat()
@@ -935,8 +947,17 @@ class WheelStrategy(BaseStrategy):
         if not contracts:
             return []
 
-        # Fetch live quotes for all contracts (limit to 50 per Alpaca batch)
-        contract_symbols = [c.symbol for c in contracts[:50]]
+        # Sort by proximity to the stock price so the 50-symbol quote batch
+        # actually contains usable strikes (near-ATM through slight OTM).
+        if stock_price is not None:
+            contracts = sorted(
+                contracts,
+                key=lambda c: abs(float(c.strike_price) - stock_price),
+            )
+
+        # Fetch live quotes for the most relevant contracts (50 = Alpaca batch cap)
+        candidate_pool = contracts[:50]
+        contract_symbols = [c.symbol for c in candidate_pool]
         try:
             quote_req = OptionLatestQuoteRequest(symbol_or_symbols=contract_symbols)
             quotes = self.broker.option_data.get_option_latest_quote(quote_req)
@@ -945,7 +966,7 @@ class WheelStrategy(BaseStrategy):
             quotes = {}
 
         results: list[BrokerContract] = []
-        for contract in contracts[:50]:
+        for contract in candidate_pool:
             q = quotes.get(contract.symbol)
             if not q or not q.bid_price or float(q.bid_price) <= 0:
                 continue

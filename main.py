@@ -74,26 +74,11 @@ def main():
         ",".join(get("wheel.wishlist", []) or []),
     )
 
-    # Initialize database — clean slate on fresh deploy (Railway containers are ephemeral)
-    import pathlib
-    db_path = pathlib.Path(__file__).parent / "wheelbot.db"
-    if db_path.exists():
-        # Check if DB has ghost positions from old fake paper mode
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        try:
-            count = conn.execute("SELECT COUNT(*) FROM positions WHERE notes LIKE '%Order pending%' OR notes IS NULL").fetchone()[0]
-            if count > 0:
-                log.warning("Clearing %d ghost positions from old paper mode", count)
-                conn.execute("DELETE FROM positions")
-                conn.execute("DELETE FROM signals")
-                conn.execute("DELETE FROM executions")
-                conn.commit()
-        except Exception:
-            pass  # Table might not exist yet
-        finally:
-            conn.close()
-
+    # Initialize database. Do NOT wipe on startup — Railway restarts are routine
+    # (deploys, OOM, scheduled), and the previous DELETE was nuking real positions
+    # whose notes still said "Order pending: ..." because the tracker wasn't
+    # clearing that prefix on fill. DB↔Alpaca drift is the reconciler's job
+    # (09:31 daily), not destructive cleanup here.
     db.init_db()
     log.info("Database initialized")
 

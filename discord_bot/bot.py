@@ -287,7 +287,10 @@ class WheelBot(commands.Bot):
         # with zero fills, page the user. Dedupe: fire once per day max.
         try:
             from data import database as _db
-            from engine.silent_failure_alarm import should_alarm
+            from engine.silent_failure_alarm import (
+                should_alarm,
+                trading_days_between,
+            )
             from utils.timing import now_et
 
             _now = now_et()
@@ -302,10 +305,19 @@ class WheelBot(commands.Bot):
                 if self._silent_alarm_last_fired_date != today:
                     self._silent_alarm_last_fired_date = today
                     ref = last_fill or self._bot_started_at
+                    elapsed_td = (
+                        trading_days_between(ref, _now) if ref else None
+                    )
+                    elapsed_str = (
+                        f"{elapsed_td} trading day(s)"
+                        if elapsed_td is not None
+                        else "unknown"
+                    )
+                    ref_label = "Last fill" if last_fill else "Bot started"
                     msg = (
                         f"🚨 SILENT-FAILURE ALARM\n"
-                        f"No fills detected in 2+ trading days.\n"
-                        f"Last fill: {ref.isoformat() if ref else 'never'}\n"
+                        f"No fills in {elapsed_str} (threshold: 2).\n"
+                        f"{ref_label}: {ref.isoformat() if ref else 'never'}\n"
                         f"Now: {_now.isoformat()}\n"
                         f"Check Railway logs + Alpaca auth."
                     )
